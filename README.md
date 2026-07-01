@@ -24,6 +24,10 @@ fails, the Debezium task is scheduled on another replica.
 Debezium can be customized with runtime properties using the `debezium.` prefix. For a standard
 docker compose installation the prefix is `OMRS_EXTRA_DEBEZIUM_`.
 
+Requirements
+------------
+The module requires OpenMRS Core 2.9+ and Java 17.
+
 Listening to events
 -----------
 Since events are published from a scheduled task, they are asynchronous to the application logic by default. 
