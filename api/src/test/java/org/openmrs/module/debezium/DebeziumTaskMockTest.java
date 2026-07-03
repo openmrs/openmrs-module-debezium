@@ -129,7 +129,59 @@ public class DebeziumTaskMockTest {
 	public void parseDatabaseConnectionInfo_shouldFailLoudlyWhenDatabaseNameIsMissing() {
 		IllegalStateException error = assertThrows(IllegalStateException.class,
 		    () -> DebeziumTask.parseDatabaseConnectionInfo("jdbc:mariadb://db-primary:3306"));
-		
+
 		Assert.assertTrue(error.getMessage().contains("database name"));
+	}
+	
+	@Test
+	public void registerFailedEventAttempt_shouldIncrementCountAcrossCallsForSameEvent() {
+		ChangeEvent<String, String> event = mockEventWithBinlogPos("openmrs.openmrs.person_name", "{\"person_name_id\":99}",
+		    "binlog.001", "500", "0");
+		
+		assertEquals(1, debeziumTask.registerFailedEventAttempt(event));
+		assertEquals(2, debeziumTask.registerFailedEventAttempt(event));
+		assertEquals(3, debeziumTask.registerFailedEventAttempt(event));
+	}
+	
+	@Test
+	public void registerFailedEventAttempt_shouldTrackDifferentEventsSeparately() {
+		ChangeEvent<String, String> event1 = mockEventWithBinlogPos("openmrs.openmrs.person_name", "{\"person_name_id\":1}",
+		    "binlog.001", "100", "0");
+		ChangeEvent<String, String> event2 = mockEventWithBinlogPos("openmrs.openmrs.person", "{\"person_id\":2}",
+		    "binlog.001", "200", "0");
+		
+		assertEquals(1, debeziumTask.registerFailedEventAttempt(event1));
+		assertEquals(1, debeziumTask.registerFailedEventAttempt(event2));
+		assertEquals(2, debeziumTask.registerFailedEventAttempt(event1));
+		assertEquals(2, debeziumTask.registerFailedEventAttempt(event2));
+	}
+	
+	@Test
+	public void registerFailedEventAttempt_shouldNotResetWhenTimestampChangesAcrossRestarts() {
+		String valueTemplate = "{\"source\":{\"file\":\"binlog.001\",\"pos\":300,\"row\":0},\"op\":\"u\",\"ts_ms\":%d}";
+		
+		ChangeEvent<String, String> attempt1 = mock(ChangeEvent.class);
+		when(attempt1.destination()).thenReturn("openmrs.openmrs.person_name");
+		when(attempt1.key()).thenReturn("{\"person_name_id\":77}");
+		when(attempt1.value()).thenReturn(String.format(valueTemplate, 1000L));
+		
+		ChangeEvent<String, String> attempt2 = mock(ChangeEvent.class);
+		when(attempt2.destination()).thenReturn("openmrs.openmrs.person_name");
+		when(attempt2.key()).thenReturn("{\"person_name_id\":77}");
+		when(attempt2.value()).thenReturn(String.format(valueTemplate, 2000L));
+		
+		assertEquals(1, debeziumTask.registerFailedEventAttempt(attempt1));
+		assertEquals(2, debeziumTask.registerFailedEventAttempt(attempt2));
+	}
+	
+	@SuppressWarnings("unchecked")
+	private static ChangeEvent<String, String> mockEventWithBinlogPos(String destination, String key, String file,
+	        String pos, String row) {
+		ChangeEvent<String, String> event = mock(ChangeEvent.class);
+		when(event.destination()).thenReturn(destination);
+		when(event.key()).thenReturn(key);
+		when(event.value()).thenReturn(
+		    "{\"source\":{\"file\":\"" + file + "\",\"pos\":" + pos + ",\"row\":" + row + "},\"op\":\"u\"}");
+		return event;
 	}
 }
