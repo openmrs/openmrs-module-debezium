@@ -236,7 +236,7 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 		AtomicReference<Throwable> engineError = new AtomicReference<>();
 		Properties debeziumConfig = getDebeziumConfig();
 		lastEngineActivityTimestamp.set(0L);
-		startLivenessMonitor(debeziumConfig);
+		startLivenessMonitor(debeziumConfig, taskContext);
 		
 		try {
 			this.debeziumEngine = DebeziumEngine.create(Json.class)
@@ -636,13 +636,13 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 		}
 	}
 	
-	private void startLivenessMonitor(Properties debeziumConfig) {
+	private void startLivenessMonitor(Properties debeziumConfig, TaskContext taskContext) {
 		stopLivenessMonitor();
 		long heartbeatIntervalMs = Long.parseLong(debeziumConfig.getProperty("heartbeat.interval.ms", "0"));
 		if (heartbeatIntervalMs <= 0) {
 			return;
 		}
-		
+
 		livenessMonitor = Executors.newSingleThreadScheduledExecutor(runnable -> {
 			Thread thread = new Thread(runnable, "debezium-liveness-monitor");
 			thread.setDaemon(true);
@@ -652,14 +652,17 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 		livenessMonitor.scheduleAtFixedRate(() -> {
 			long lastActivity = lastEngineActivityTimestamp.get();
 			DebeziumEngine<ChangeEvent<String, String>> engine = debeziumEngine;
-			if (!stopping.get() && engine != null && lastActivity > 0
-			        && System.currentTimeMillis() - lastActivity > heartbeatIntervalMs * LIVENESS_TIMEOUT_MULTIPLIER) {
-				log.error("Embedded Debezium Engine appears stalled. Closing it so the scheduler can re-run on a healthy instance.");
-				try {
-					engine.close();
-				}
-				catch (IOException e) {
-					log.error("Failed to stop stalled Embedded Debezium Engine", e);
+			if (!stopping.get() && engine != null) {
+				taskContext.saveMetadata("heartbeat", System.currentTimeMillis());
+				if (lastActivity > 0
+				        && System.currentTimeMillis() - lastActivity > heartbeatIntervalMs * LIVENESS_TIMEOUT_MULTIPLIER) {
+					log.error("Embedded Debezium Engine appears stalled. Closing it so the scheduler can re-run on a healthy instance.");
+					try {
+						engine.close();
+					}
+					catch (IOException e) {
+						log.error("Failed to stop stalled Embedded Debezium Engine", e);
+					}
 				}
 			}
 		}, checkIntervalMs, checkIntervalMs, TimeUnit.MILLISECONDS);
