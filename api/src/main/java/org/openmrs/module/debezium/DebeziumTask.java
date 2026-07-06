@@ -40,6 +40,7 @@ import java.lang.management.ManagementFactory;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
@@ -220,6 +221,9 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 	
 	@Override
 	public void execute(DebeziumTaskData debeziumTaskData, TaskContext taskContext) {
+		if (!checkBinlogFormat()) {
+			return;
+		}
 		log.info("Instance elected to run Embedded Debezium Engine. Starting up...");
 		stopping.set(false);
 		
@@ -261,6 +265,36 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 		throw new RuntimeException("Embedded Debezium Engine was stopped unexpectedly. Failing the task to re-try it on another instance.");
 	}
 	
+	boolean checkBinlogFormat() {
+		Properties runtimeProperties = Context.getRuntimeProperties();
+		String dbUrl = runtimeProperties.getProperty("connection.url");
+		String dbUsername = runtimeProperties.getProperty("debezium.database.user",
+		    runtimeProperties.getProperty("connection.username"));
+		String dbPassword = runtimeProperties.getProperty("debezium.database.password",
+		    runtimeProperties.getProperty("connection.password"));
+		try (Connection connection = DriverManager.getConnection(dbUrl, dbUsername, dbPassword);
+		     Statement statement = connection.createStatement();
+		     ResultSet rs = statement.executeQuery("SHOW VARIABLES LIKE 'binlog_format'")) {
+			if (rs.next()) {
+				String binlogFormat = rs.getString("Value");
+				if (!"ROW".equalsIgnoreCase(binlogFormat)) {
+					log.warn("Debezium CDC connector requires binlog_format=ROW but found '{}'. "
+					        + "Set binlog_format=ROW in your database configuration and restart OpenMRS.", binlogFormat);
+					return false;
+				}
+			} else {
+				log.warn("Could not determine binlog_format from the database. "
+				        + "Debezium CDC connector requires binlog_format=ROW.");
+				return false;
+			}
+		}
+		catch (SQLException e) {
+			log.warn("Failed to verify binlog_format prerequisite for Debezium CDC", e);
+			return false;
+		}
+		return true;
+	}
+
 	public Properties getDebeziumConfig() {
 		Properties runtimeProperties = Context.getRuntimeProperties();
 		String dbUrl = runtimeProperties.getProperty("connection.url");

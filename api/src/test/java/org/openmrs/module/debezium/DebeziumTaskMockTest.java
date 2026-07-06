@@ -21,20 +21,31 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.openmrs.PersonName;
+import org.openmrs.api.context.Context;
 import org.openmrs.event.CDCEvent;
 import org.openmrs.event.EventPublisher;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Properties;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -216,5 +227,85 @@ public class DebeziumTaskMockTest {
 		        + "\"after\":{\"person_name_id\":1,\"given_name\":\"Jane\",\"family_name\":\"Doe\",\"uuid\":\"u1\"},"
 		        + "\"source\":{\"table\":\"person_name\",\"file\":\"" + file + "\",\"pos\":" + pos + ",\"row\":" + row
 		        + "}," + "\"op\":\"u\",\"transaction\":{\"id\":\"tx-1\"}}";
+	}
+	
+	@Test
+	public void checkBinlogFormat_shouldReturnTrueWhenBinlogFormatIsRow() throws Exception {
+		Properties runtimeProperties = new Properties();
+		runtimeProperties.setProperty("connection.url", "jdbc:mysql://localhost:3306/openmrs");
+		runtimeProperties.setProperty("connection.username", "openmrs");
+		runtimeProperties.setProperty("connection.password", "openmrs");
+
+		ResultSet rs = mock(ResultSet.class);
+		when(rs.next()).thenReturn(true);
+		when(rs.getString("Value")).thenReturn("ROW");
+
+		Statement statement = mock(Statement.class);
+		when(statement.executeQuery(anyString())).thenReturn(rs);
+
+		Connection connection = mock(Connection.class);
+		when(connection.createStatement()).thenReturn(statement);
+
+		try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+		     MockedStatic<DriverManager> driverManagerMock = mockStatic(DriverManager.class)) {
+			contextMock.when(Context::getRuntimeProperties).thenReturn(runtimeProperties);
+			driverManagerMock.when(() -> DriverManager.getConnection(anyString(), anyString(), anyString()))
+			        .thenReturn(connection);
+
+			assertTrue(debeziumTask.checkBinlogFormat());
+		}
+	}
+	
+	@Test
+	public void checkBinlogFormat_shouldReturnFalseWhenBinlogFormatIsNotRow() throws Exception {
+		Properties runtimeProperties = new Properties();
+		runtimeProperties.setProperty("connection.url", "jdbc:mysql://localhost:3306/openmrs");
+		runtimeProperties.setProperty("connection.username", "openmrs");
+		runtimeProperties.setProperty("connection.password", "openmrs");
+
+		ResultSet rs = mock(ResultSet.class);
+		when(rs.next()).thenReturn(true);
+		when(rs.getString("Value")).thenReturn("MIXED");
+
+		Statement statement = mock(Statement.class);
+		when(statement.executeQuery(anyString())).thenReturn(rs);
+
+		Connection connection = mock(Connection.class);
+		when(connection.createStatement()).thenReturn(statement);
+
+		try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+		     MockedStatic<DriverManager> driverManagerMock = mockStatic(DriverManager.class)) {
+			contextMock.when(Context::getRuntimeProperties).thenReturn(runtimeProperties);
+			driverManagerMock.when(() -> DriverManager.getConnection(anyString(), anyString(), anyString()))
+			        .thenReturn(connection);
+
+			assertFalse(debeziumTask.checkBinlogFormat());
+		}
+	}
+	
+	@Test
+	public void checkBinlogFormat_shouldReturnFalseWhenVariableIsNotFound() throws Exception {
+		Properties runtimeProperties = new Properties();
+		runtimeProperties.setProperty("connection.url", "jdbc:mysql://localhost:3306/openmrs");
+		runtimeProperties.setProperty("connection.username", "openmrs");
+		runtimeProperties.setProperty("connection.password", "openmrs");
+
+		ResultSet rs = mock(ResultSet.class);
+		when(rs.next()).thenReturn(false);
+
+		Statement statement = mock(Statement.class);
+		when(statement.executeQuery(anyString())).thenReturn(rs);
+
+		Connection connection = mock(Connection.class);
+		when(connection.createStatement()).thenReturn(statement);
+
+		try (MockedStatic<Context> contextMock = mockStatic(Context.class);
+		     MockedStatic<DriverManager> driverManagerMock = mockStatic(DriverManager.class)) {
+			contextMock.when(Context::getRuntimeProperties).thenReturn(runtimeProperties);
+			driverManagerMock.when(() -> DriverManager.getConnection(anyString(), anyString(), anyString()))
+			        .thenReturn(connection);
+
+			assertFalse(debeziumTask.checkBinlogFormat());
+		}
 	}
 }
