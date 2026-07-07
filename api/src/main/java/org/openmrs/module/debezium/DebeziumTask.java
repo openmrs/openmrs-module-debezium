@@ -339,6 +339,7 @@ public class DebeziumTask implements TaskHandler<DebeziumTaskData> {
 		        .with("database.server.id", defaultServerId())
 		        .with("topic.prefix", "openmrs")
 		        .with("snapshot.mode", "no_data")
+		        .with("snapshot.locking.mode", "none")
 		        .with("database.include.list", connectionInfo.getDatabaseName())
 		        .with("table.exclude.list", ".*\\." + OFFSET_STORAGE_TABLE + ",.*\\." + DATABASE_HISTORY_TABLE + ",.*\\." + FAILED_EVENTS_TABLE)
 		        .with("heartbeat.interval.ms", DEFAULT_HEARTBEAT_INTERVAL_MS)
